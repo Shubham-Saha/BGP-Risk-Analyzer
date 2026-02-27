@@ -25,287 +25,23 @@ Usage:
 """
 
 import argparse
-import csv
-import json
 import socket
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
 
-
-RESULTS_DIR = Path(__file__).parent / "results"
-CSV_FILE = RESULTS_DIR / "scan_results.csv"
-USER_AGENT = "BGP-Risk-Analyzer/1.0"
-
-CSV_HEADERS = [
-    "IP Addresses",
-    "URL",
-    "Ping Status",
-    "ASN",
-    "Hostname",
-    "Company Name",
-    "Range",
-    "Location (City; Region; Country)",
-    "ROA Return",
-    "Prefix",
-    "MaxLength",
-    "Erosion Case?",
-    "Erosion Description",
-    "Last accessed",
-]
-
-
-# ── Network utilities ────────────────────────────────────────────────────────
-
-
-def fetch_json(url: str, timeout: int = 20) -> dict:
-    req = Request(url, headers={"User-Agent": USER_AGENT})
-    response = urlopen(req, timeout=timeout)
-    return json.loads(response.read().decode("utf-8"))
-
-
-def resolve_hostname(url_or_hostname: str) -> tuple[str, str]:
-    """Extract hostname from URL and resolve to IPv4 address."""
-    if "://" not in url_or_hostname:
-        url_or_hostname = f"https://{url_or_hostname}"
-    hostname = urlparse(url_or_hostname).hostname
-    ip = socket.gethostbyname(hostname)
-    return hostname, ip
-
-
-def ping_host(ip: str, count: int = 4) -> tuple[bool, str]:
-    """Ping an IP and return (is_reachable, raw_output)."""
-    flag = "-n" if sys.platform == "win32" else "-c"
-    try:
-        result = subprocess.run(
-            ["ping", flag, str(count), ip],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        return result.returncode == 0, result.stdout
-    except subprocess.TimeoutExpired:
-        return False, "Ping timed out"
-
-
-# ── IP intelligence ──────────────────────────────────────────────────────────
-
-
-def query_ipinfo(ip: str) -> dict:
-    """Query ipinfo.io for geolocation, ASN, and organization.
-
-    Returns a dict with keys: ip, hostname, city, region, country, org,
-    asn, asn_name.
-    """
-    data = fetch_json(f"https://ipinfo.io/{ip}/json")
-    org = data.get("org", "")
-    asn, asn_name = "", ""
-    if org.startswith("AS"):
-        parts = org.split(" ", 1)
-        asn = parts[0]
-        asn_name = parts[1] if len(parts) > 1 else ""
-    return {
-        "ip": data.get("ip", ip),
-        "hostname": data.get("hostname", ""),
-        "city": data.get("city", ""),
-        "region": data.get("region", ""),
-        "country": data.get("country", ""),
-        "org": org,
-        "asn": asn,
-        "asn_name": asn_name,
-    }
-
-
-def get_announced_prefix(ip: str) -> tuple[str, str]:
-    """Get the BGP-announced prefix and origin ASN for an IP from RIPE Stat."""
-    data = fetch_json(
-        f"https://stat.ripe.net/data/network-info/data.json?resource={ip}"
-    )
-    prefix = data["data"].get("prefix", "")
-    asns = data["data"].get("asns", [])
-    asn = f"AS{asns[0]}" if asns else ""
-    return prefix, asn
-
-
-# ── RPKI validation & EROSION classification ─────────────────────────────────
-
-
-def validate_rpki(asn: str, prefix: str) -> dict:
-    """Validate RPKI/ROA via RIPE Stat and classify into EROSION cases.
-
-    Returns a dict with keys: prefix, prefix_length, asn, roa_exists,
-    max_length, validity, erosion_case, erosion_description, gap, all_roas.
-    """
-    asn_str = asn if asn.startswith("AS") else f"AS{asn}"
-    encoded_prefix = quote(prefix, safe="")
-    data = fetch_json(
-        f"https://stat.ripe.net/data/rpki-validation/data.json"
-        f"?resource={asn_str}&prefix={encoded_prefix}"
-    )
-    rpki = data["data"]
-    status = rpki.get("status", "unknown")
-    roas = rpki.get("validating_roas", [])
-    prefix_length = int(prefix.split("/")[1])
-
-    all_roas = [
-        {
-            "origin": f"AS{r['origin']}",
-            "prefix": r["prefix"],
-            "max_length": r["max_length"],
-            "validity": r.get("validity", status),
-        }
-        for r in roas
-    ]
-
-    if roas:
-        roa = roas[0]
-        max_length = int(roa.get("max_length", prefix_length))
-        roa_exists = True
-
-        if max_length <= prefix_length:
-            case = 1
-            gap = 0
-            description = (
-                "SAFE — ROA exists, MaxLength = prefix length. "
-                "Sub-prefix hijack blocked by RPKI validation."
-            )
-        else:
-            case = 2
-            gap = max_length - prefix_length
-            description = (
-                f"VULNERABLE — ROA exists but MaxLength (/{max_length}) > "
-                f"prefix length (/{prefix_length}). Gap: {gap} levels. "
-                f"Forged-origin sub-prefix hijack passes RPKI validation."
-            )
-    else:
-        roa_exists = False
-        max_length = None
-        gap = None
-        if prefix_length >= 24:
-            case = 3
-            description = (
-                f"PARTIAL PROTECTION — No ROA exists, prefix is /{prefix_length}. "
-                f"Most BGP routers reject more-specific than /24. "
-                f"Equal-length hijack still possible via AS path competition."
-            )
-        else:
-            case = 4
-            description = (
-                f"MOST VULNERABLE — No ROA exists, prefix is /{prefix_length}. "
-                f"Attacker can announce a more-specific /24 sub-prefix "
-                f"and attract traffic without any RPKI obstacle."
-            )
-
-    return {
-        "prefix": prefix,
-        "prefix_length": prefix_length,
-        "asn": asn_str,
-        "roa_exists": roa_exists,
-        "max_length": max_length,
-        "validity": status,
-        "erosion_case": case,
-        "erosion_description": description,
-        "gap": gap,
-        "all_roas": all_roas,
-    }
-
-
-# ── Display ──────────────────────────────────────────────────────────────────
-
-
-def print_header(text: str):
-    print(f"\n{'=' * 64}")
-    print(f"  {text}")
-    print(f"{'=' * 64}")
-
-
-def print_field(label: str, value: str, indent: int = 2):
-    padding = 32 - len(label)
-    dots = "." * max(padding, 2)
-    print(f"{' ' * indent}{label}{dots} {value}")
-
-
-def display_resolution(hostname: str, ip: str, input_url: str):
-    print_header("DNS RESOLUTION")
-    print_field("Input", input_url)
-    print_field("Hostname", hostname)
-    print_field("Resolved IP", ip)
-
-
-def display_ping(ip: str, is_alive: bool, output: str):
-    print_header("PING CHECK")
-    print_field("Target", ip)
-    print_field("Status", "ACTIVE" if is_alive else "DEACTIVE")
-    for line in output.strip().split("\n"):
-        stripped = line.strip()
-        keywords = ["average", "avg", "packets", "loss", "round-trip", "rtt"]
-        if any(kw in stripped.lower() for kw in keywords):
-            print(f"    {stripped}")
-
-
-def display_ipinfo(info: dict):
-    print_header("IP INTELLIGENCE (ipinfo.io)")
-    print_field("IP Address", info["ip"])
-    print_field("Hostname", info["hostname"] or "(none)")
-    print_field("Location", f"{info['city']}, {info['region']}, {info['country']}")
-    print_field("Organization", info["org"])
-    print_field("ASN", info["asn"] or "(not found)")
-    print_field("ASN Name", info["asn_name"] or "(not found)")
-
-
-def display_rpki(result: dict):
-    print_header("RPKI / ROA ANALYSIS (RIPE Stat)")
-    print_field("Announced Prefix", result["prefix"])
-    print_field("Prefix Length", f"/{result['prefix_length']}")
-    print_field("Origin ASN", result["asn"])
-    print_field("ROA Exists", "Yes" if result["roa_exists"] else "No")
-    print_field("RPKI Validity", result["validity"].upper())
-    if result["max_length"] is not None:
-        print_field("ROA MaxLength", f"/{result['max_length']}")
-    if result["gap"] is not None and result["gap"] > 0:
-        print_field("MaxLength Gap", f"{result['gap']} levels")
-
-    if result["all_roas"]:
-        print(f"\n  Covering ROAs:")
-        for roa in result["all_roas"]:
-            print(
-                f"    {roa['origin']} | {roa['prefix']} | "
-                f"MaxLen /{roa['max_length']} | {roa['validity']}"
-            )
-
-    print_header(f"EROSION CLASSIFICATION: CASE {result['erosion_case']}")
-    print(f"  {result['erosion_description']}")
-
-
-# ── CSV persistence ──────────────────────────────────────────────────────────
-
-
-def append_to_csv(row: dict):
-    """Append a single result row to the CSV file.
-
-    Creates the file with headers if it does not exist yet.
-    Uses semicolon delimiter and UTF-8 BOM for native Microsoft Excel
-    compatibility on European locale systems.
-    """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    file_exists = CSV_FILE.exists()
-
-    if not file_exists:
-        # New file: BOM + headers + first row
-        with open(CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, delimiter=";")
-            writer.writeheader()
-            writer.writerow(row)
-    else:
-        # Existing file: append row
-        with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, delimiter=";")
-            writer.writerow(row)
-
-    print(f"\n  Result appended to: {CSV_FILE}")
+from csv_writer import append_to_csv
+from display import (
+    display_ipinfo,
+    display_ping,
+    display_resolution,
+    display_rpki,
+    print_batch_summary,
+    print_field,
+)
+from ipinfo import query_ipinfo
+from network import ping_host, resolve_hostname
+from rpki import get_announced_prefix, validate_rpki
 
 
 # ── Core flow ────────────────────────────────────────────────────────────────
@@ -448,24 +184,6 @@ def run_url_file(filepath: str):
     print_batch_summary(results)
 
 
-def print_batch_summary(results: list[dict]):
-    """Print a summary table after batch processing."""
-    if not results:
-        print("\n  No results to summarize.")
-        return
-
-    print_header("BATCH SUMMARY")
-    for r in results:
-        target = r["URL"] or r["IP Addresses"]
-        print(
-            f"  {target:.<40} Case {r['Erosion Case?']} | "
-            f"{r['Prefix']} | {r['ASN']} | "
-            f"{r['ROA Return']} | {r['Ping Status']}"
-        )
-    print(f"\n  Total: {len(results)} targets scanned")
-    print(f"  Results in: {CSV_FILE}")
-
-
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 
@@ -489,15 +207,12 @@ Examples:
     args = parser.parse_args()
 
     if args.ip:
-        # Phase 1: Single IP
         analyze_ip(args.ip)
 
     elif args.ip_filename:
-        # Phase 2: IP list from file
         run_ip_file(args.ip_filename)
 
     elif args.url:
-        # Phase 3: Single URL → DNS resolve → Phase 1
         try:
             hostname, ip = resolve_hostname(args.url)
             display_resolution(hostname, ip, args.url)
@@ -507,7 +222,6 @@ Examples:
         analyze_ip(ip, url=args.url)
 
     elif args.url_filename:
-        # Phase 4: URL list from file
         run_url_file(args.url_filename)
 
 
