@@ -12,13 +12,13 @@ EROSION Cases (IEEE 10646806):
 
 Usage:
     Phase 1 — single IP:
-        python bgp_risk_analyzer.py --ip 159.89.214.152
+        python bgp_risk_analyzer.py --ip 127.0.0.1
 
     Phase 2 — IP list from file:
         python bgp_risk_analyzer.py --ip_filename targets_ips.txt
 
     Phase 3 — single URL (DNS resolve then Phase 1):
-        python bgp_risk_analyzer.py --url https://bootstrap1.petals.dev
+        python bgp_risk_analyzer.py --url https://xyz.com
 
     Phase 4 — URL list from file:
         python bgp_risk_analyzer.py --url_filename targets_urls.txt
@@ -475,9 +475,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Phase 1:  python bgp_risk_analyzer.py --ip 159.89.214.152
+  Phase 1:  python bgp_risk_analyzer.py --ip 127.0.0.1
   Phase 2:  python bgp_risk_analyzer.py --ip_filename targets_ips.txt
-  Phase 3:  python bgp_risk_analyzer.py --url https://bootstrap1.petals.dev
+  Phase 3:  python bgp_risk_analyzer.py --url https://xyz.com
   Phase 4:  python bgp_risk_analyzer.py --url_filename targets_urls.txt
         """,
     )
