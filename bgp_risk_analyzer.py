@@ -1,8 +1,8 @@
 """BGP Risk Analyzer — Assess BGP hijacking vulnerability of network endpoints.
 
-Performs DNS resolution, ping checks, IP geolocation via ipinfo.io,
-ASN identification, RPKI/ROA validation via RIPE Stat, and EROSION
-attack case classification.  Results are appended to a single CSV file.
+Interactive tool that performs DNS resolution, ping checks, IP geolocation
+via ipinfo.io, ASN identification, RPKI/ROA validation via RIPE Stat,
+and EROSION attack case classification.
 
 EROSION Cases (IEEE 10646806):
     Case 1: ROA exists, MaxLength = prefix length     -> Safest
@@ -11,26 +11,14 @@ EROSION Cases (IEEE 10646806):
     Case 4: No ROA, prefix larger than /24            -> Most vulnerable
 
 Usage:
-    Phase 1 — single IP:
-        python bgp_risk_analyzer.py --ip 127.0.0.1
-
-    Phase 2 — IP list from file:
-        python bgp_risk_analyzer.py --ip_filename targets_ips.txt
-
-    Phase 3 — single URL (DNS resolve then Phase 1):
-        python bgp_risk_analyzer.py --url https://xyz.com
-
-    Phase 4 — URL list from file:
-        python bgp_risk_analyzer.py --url_filename targets_urls.txt
+    python bgp_risk_analyzer.py
 """
 
-import argparse
 import socket
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from csv_writer import append_to_csv
+from csv_writer import append_to_csv_dedup
 from display import (
     display_ipinfo,
     display_ping,
@@ -44,21 +32,11 @@ from network import ping_host, resolve_hostname
 from rpki import get_announced_prefix, validate_rpki
 
 
-# ── Core flow ────────────────────────────────────────────────────────────────
+# ── Core analysis ────────────────────────────────────────────────────────────
 
 
 def analyze_ip(ip: str, url: str = "", auto_proceed: bool = False) -> dict | None:
     """Full analysis pipeline for a single IP.
-
-    Parameters
-    ----------
-    ip : str
-        The IP address to analyze.
-    url : str
-        The original URL if the IP was resolved from a URL (Phase 3/4).
-        Left empty for direct IP input (Phase 1/2).
-    auto_proceed : bool
-        If True, skip the interactive confirmation prompt (used in batch modes).
 
     Returns the CSV row dict, or None if analysis was skipped/failed.
     """
@@ -67,7 +45,7 @@ def analyze_ip(ip: str, url: str = "", auto_proceed: bool = False) -> dict | Non
     display_ping(ip, is_alive, ping_output)
     ping_status = "Active" if is_alive else "Deactive"
 
-    # Interactive confirmation (only for single --ip / --url)
+    # Interactive confirmation (skipped in batch/auto modes)
     if not auto_proceed:
         print()
         proceed = input("  Proceed with RPKI analysis? [y/n]: ").strip().lower()
@@ -97,7 +75,7 @@ def analyze_ip(ip: str, url: str = "", auto_proceed: bool = False) -> dict | Non
     rpki = validate_rpki(asn, prefix)
     display_rpki(rpki)
 
-    # Step 5: Build CSV row and append
+    # Step 5: Build CSV row and append (with deduplication)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     max_length_str = f"/{rpki['max_length']}" if rpki["max_length"] is not None else ""
     location = f"{ipinfo['city']}; {ipinfo['region']}; {ipinfo['country']}"
@@ -117,25 +95,29 @@ def analyze_ip(ip: str, url: str = "", auto_proceed: bool = False) -> dict | Non
         "Erosion Case?": rpki["erosion_case"],
         "Erosion Description": rpki["erosion_description"],
         "Last accessed": now,
+        "New Info after rescan?": "",
     }
 
-    append_to_csv(row)
+    append_to_csv_dedup(row)
     return row
 
 
+# ── Batch helpers ────────────────────────────────────────────────────────────
+
+
 def run_ip_file(filepath: str):
-    """Phase 2: Read a file of IP addresses, run Phase 1 for each."""
+    """Read a file of IP addresses, run analysis for each."""
     path = Path(filepath)
     if not path.exists():
-        print(f"Error: File not found: {filepath}")
-        sys.exit(1)
+        print(f"  Error: File not found: {filepath}")
+        return
 
     lines = [
         line.strip()
         for line in path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    print(f"Loaded {len(lines)} IP addresses from {path.name}\n")
+    print(f"  Loaded {len(lines)} IP addresses from {path.name}\n")
 
     results = []
     for i, ip in enumerate(lines, 1):
@@ -151,18 +133,18 @@ def run_ip_file(filepath: str):
 
 
 def run_url_file(filepath: str):
-    """Phase 4: Read a file of URLs, resolve DNS (Phase 3), then run Phase 1."""
+    """Read a file of URLs, resolve DNS, then run analysis for each."""
     path = Path(filepath)
     if not path.exists():
-        print(f"Error: File not found: {filepath}")
-        sys.exit(1)
+        print(f"  Error: File not found: {filepath}")
+        return
 
     lines = [
         line.strip()
         for line in path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    print(f"Loaded {len(lines)} URLs from {path.name}\n")
+    print(f"  Loaded {len(lines)} URLs from {path.name}\n")
 
     results = []
     for i, target_url in enumerate(lines, 1):
@@ -184,46 +166,151 @@ def run_url_file(filepath: str):
     print_batch_summary(results)
 
 
+# ── Phase 5: Prime Intellect ────────────────────────────────────────────────
+
+
+def run_prime_interactive():
+    """Phase 5: Auto-discover GPU offerings, scan each pod's IP.
+
+    Flow per offering:
+        Discover → Create pod → Wait for IP → Get details/logs →
+        BGP analysis (while pod is alive) → Terminate pod → Save CSV
+    """
+    from prime_intellect import (
+        append_to_prime_csv,
+        build_prime_csv_row,
+        display_pod_result,
+        display_prime_scan_summary,
+        get_api_key,
+        get_team_id,
+        scan_all_pods,
+    )
+
+    api_key = get_api_key()
+    if not api_key:
+        return
+
+    team_id = get_team_id()
+    if not team_id:
+        return
+
+    def bgp_callback(ip: str) -> dict | None:
+        """Run BGP analysis on a live pod IP (called before termination)."""
+        return analyze_ip(ip, url="", auto_proceed=True)
+
+    def on_pod_done(index: int, total: int, result: dict):
+        """Save CSV and display result after each pod is processed."""
+        pod_ip = result.get("pod_ip", "")
+        prime_row = build_prime_csv_row(result)
+        append_to_prime_csv(prime_row)
+        display_pod_result(index, total, pod_ip, result.get("bgp_row"), result.get("error"))
+
+    # scan_all_pods handles: discovery, pod creation loop, Ctrl+C
+    # BGP analysis runs inside each pod's lifecycle (before termination)
+    # CSV is saved after each pod via on_pod_done callback
+    results = scan_all_pods(
+        api_key,
+        analyze_callback=bgp_callback,
+        on_pod_done=on_pod_done,
+        team_id=team_id,
+    )
+
+    if not results:
+        print("\n  No pods were scanned.")
+        return
+
+    display_prime_scan_summary(results)
+
+
+# ── Interactive menu ─────────────────────────────────────────────────────────
+
+
+BANNER = """
+================================================================
+   ____   ____ ____    ____  _     _      _                _
+  | __ ) / ___|  _ \\  |  _ \\(_)___| | __ / \\   _ __   __ _| |_   _ _______ _ __
+  |  _ \\| |  _| |_) | | |_) | / __| |/ // _ \\ | '_ \\ / _` | | | | |_  / _ \\ '__|
+  | |_) | |_| |  __/  |  _ <| \\__ \\   </ ___ \\| | | | (_| | | |_| |/ /  __/ |
+  |____/ \\____|_|     |_| \\_\\_|___/_|\\_\\_/   \\_\\_| |_|\\__,_|_|\\__, /___\\___|_|
+                                                               |___/
+  Tool for BGP Hijacking Risk Assessment
+================================================================
+"""
+
+MENU = """
+  [1] Scan single IP address
+  [2] Scan IP addresses from file
+  [3] Scan single URL
+  [4] Scan URLs from file
+  [5] Prime Intellect GPU Pod Scan
+  [6] Generate Visualizations
+  [0] Exit
+"""
+
+
+def show_menu() -> str:
+    """Display the menu and return the user's choice."""
+    print(MENU)
+    return input("  Select option: ").strip()
+
+
+def interactive_main():
+    """Main interactive loop — keeps running until the user exits."""
+    print(BANNER)
+
+    while True:
+        choice = show_menu()
+
+        if choice == "0":
+            print("\n  Goodbye!\n")
+            break
+
+        elif choice == "1":
+            ip = input("\n  Enter IP address: ").strip()
+            if ip:
+                analyze_ip(ip)
+            else:
+                print("  No IP entered.")
+
+        elif choice == "2":
+            filepath = input("\n  Enter file path: ").strip()
+            if filepath:
+                run_ip_file(filepath)
+            else:
+                print("  No file path entered.")
+
+        elif choice == "3":
+            url = input("\n  Enter URL: ").strip()
+            if url:
+                try:
+                    hostname, ip = resolve_hostname(url)
+                    display_resolution(hostname, ip, url)
+                    analyze_ip(ip, url=url)
+                except (socket.gaierror, socket.herror) as e:
+                    print(f"\n  DNS resolution failed for {url}: {e}")
+            else:
+                print("  No URL entered.")
+
+        elif choice == "4":
+            filepath = input("\n  Enter file path: ").strip()
+            if filepath:
+                run_url_file(filepath)
+            else:
+                print("  No file path entered.")
+
+        elif choice == "5":
+            run_prime_interactive()
+
+        elif choice == "6":
+            from visualization import run_visualizations
+            run_visualizations()
+
+        else:
+            print("  Invalid option. Please select 0-6.")
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="BGP Risk Analyzer — assess BGP hijacking vulnerability using EROSION classification",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  Phase 1:  python bgp_risk_analyzer.py --ip 127.0.0.1
-  Phase 2:  python bgp_risk_analyzer.py --ip_filename targets_ips.txt
-  Phase 3:  python bgp_risk_analyzer.py --url https://xyz.com
-  Phase 4:  python bgp_risk_analyzer.py --url_filename targets_urls.txt
-        """,
-    )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--ip", help="Phase 1: Single IP address to analyze")
-    group.add_argument("--ip_filename", help="Phase 2: Text file with one IP address per line")
-    group.add_argument("--url", help="Phase 3: Single URL to resolve and analyze")
-    group.add_argument("--url_filename", help="Phase 4: Text file with one URL per line")
-    args = parser.parse_args()
-
-    if args.ip:
-        analyze_ip(args.ip)
-
-    elif args.ip_filename:
-        run_ip_file(args.ip_filename)
-
-    elif args.url:
-        try:
-            hostname, ip = resolve_hostname(args.url)
-            display_resolution(hostname, ip, args.url)
-        except (socket.gaierror, socket.herror) as e:
-            print(f"DNS resolution failed for {args.url}: {e}")
-            sys.exit(1)
-        analyze_ip(ip, url=args.url)
-
-    elif args.url_filename:
-        run_url_file(args.url_filename)
-
-
 if __name__ == "__main__":
-    main()
+    interactive_main()
