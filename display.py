@@ -34,7 +34,7 @@ def display_ping(ip: str, is_alive: bool, output: str):
 
 
 def display_ipinfo(info: dict):
-    print_header("IP INTELLIGENCE (ipinfo.io)")
+    print_header("IP INTELLIGENCE (RIPE Stat)")
     print_field("IP Address", info["ip"])
     print_field("Hostname", info["hostname"] or "(none)")
     print_field("Location", f"{info['city']}, {info['region']}, {info['country']}")

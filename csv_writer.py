@@ -37,7 +37,7 @@ def append_to_csv(row: dict):
 
 
 def _ensure_csv_headers_current():
-    """If the CSV exists with old 14-column headers, migrate to 15 columns."""
+    """If the CSV exists with old headers, migrate to current column set."""
     if not CSV_FILE.exists():
         return
 
@@ -46,16 +46,19 @@ def _ensure_csv_headers_current():
         existing_headers = reader.fieldnames
         if not existing_headers:
             return
-        if "New Info after rescan?" in existing_headers:
+        if "Platform" in existing_headers:
             return  # already up to date
         rows = list(reader)
 
-    # Rewrite with the 15th column added
+    # Rewrite with all current headers, backfill Platform with "PI" for old rows
     with open(CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, delimiter=";")
         writer.writeheader()
         for row in rows:
-            row.setdefault("New Info after rescan?", "")
+            for h in CSV_HEADERS:
+                row.setdefault(h, "")
+            if not row.get("Platform"):
+                row["Platform"] = "PI"
             writer.writerow(row)
 
     print(f"  Migrated CSV to {len(CSV_HEADERS)}-column format.")

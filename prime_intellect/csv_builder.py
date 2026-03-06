@@ -93,6 +93,10 @@ def build_prime_csv_row(scan_result: dict) -> dict:
     # Availability data from discovery endpoint
     availability_data = _safe_json(offering, 1000) if offering else ""
 
+    # ── Spin-up time & hardware specs ────────────────────────────────
+    spinup_seconds = scan_result.get("spinup_seconds", "")
+    hw = scan_result.get("hardware", {})
+
     return {
         "Pod ID": pod_id,
         "Pod Name": pod_name,
@@ -109,6 +113,12 @@ def build_prime_csv_row(scan_result: dict) -> dict:
         "Total Billed Price": str(total_billed),
         "Created At": str(created_at),
         "Terminated At": str(terminated_at),
+        "Spin-Up Time (s)": str(spinup_seconds) if spinup_seconds is not None else "",
+        "GPU Memory": str(hw.get("gpu_memory", "")),
+        "vCPUs": str(hw.get("vcpus", "")),
+        "Disk (GB)": str(hw.get("disk", "")),
+        "RAM (GB)": str(hw.get("ram", "")),
+        "Advertised Provisioning Time": str(hw.get("advertised_provisioning_time", "")),
         "Pod Logs (excerpt)": logs_excerpt,
         "List Pods Response (summary)": list_summary,
         "Create Pod Response (status)": create_summary,
@@ -119,4 +129,6 @@ def build_prime_csv_row(scan_result: dict) -> dict:
         "Logs Response (excerpt)": logs_excerpt,
         "Availability Data": availability_data,
         "Scan Timestamp": now,
+        "Crawl Number": "",              # Set by csv_writer during append
+        "Changes in Crawl Number": "",   # Set by csv_writer during append
     }

@@ -1,4 +1,4 @@
-"""Network utilities — HTTP fetch, DNS resolution, and ping."""
+"""Network utilities -- HTTP fetch, DNS resolution, and ping."""
 
 import json
 import socket
