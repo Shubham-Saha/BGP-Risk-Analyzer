@@ -219,7 +219,7 @@ def scan_all_machines(
 
     results = []
     result_queue = queue.Queue()
-    crawl_timer = CrawlTimer(total_offerings=len(offerings), platform="Vast")
+    crawl_timer = CrawlTimer(total_offerings=len(offerings), platform="Vast", parallelism=max_workers)
     crawl_timer.start_crawl()
 
     # Start background CSV writer thread

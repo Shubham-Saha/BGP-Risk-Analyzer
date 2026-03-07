@@ -2,7 +2,7 @@
 
 import csv
 
-from config import CSV_FILE, CSV_HEADERS, RESULTS_DIR
+from config import CSV_FILE, CSV_HEADERS, RESULTS_DIR, UNIQUE_IPS_CSV_FILE
 
 # Fields excluded from change detection (timestamps and the flag itself)
 _SKIP_FIELDS = {"Last accessed", "New Info after rescan?"}
@@ -128,3 +128,51 @@ def append_to_csv_dedup(row: dict) -> str:
     append_to_csv(row)
     print(f"  Rescan detected changes for {ip}: {', '.join(changed_fields)}")
     return "rescan_changed"
+
+
+# ── Unique IPs extraction ──────────────────────────────────────────────────
+
+
+def refresh_unique_ips() -> int:
+    """Read scan_results.csv, keep the latest entry per unique IP, write to unique_scan_ips.csv.
+
+    Returns the number of unique IPs written.
+    """
+    if not CSV_FILE.exists():
+        print("  No scan_results.csv found. Run a scan first.")
+        return 0
+
+    with open(CSV_FILE, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f, delimiter=";")
+        all_rows = list(reader)
+
+    # Group by IP, keep the latest entry (by "Last accessed")
+    latest_by_ip: dict[str, dict] = {}
+    for row in all_rows:
+        ip = row.get("IP Addresses", "").strip()
+        if not ip:
+            continue
+        existing = latest_by_ip.get(ip)
+        if existing is None:
+            latest_by_ip[ip] = row
+        else:
+            if row.get("Last accessed", "") > existing.get("Last accessed", ""):
+                latest_by_ip[ip] = row
+
+    if not latest_by_ip:
+        print("  No IP entries found in scan_results.csv.")
+        return 0
+
+    # Write unique IPs CSV (same headers as scan_results.csv)
+    with open(UNIQUE_IPS_CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, delimiter=";")
+        writer.writeheader()
+        for row in latest_by_ip.values():
+            writer.writerow(row)
+
+    total = len(latest_by_ip)
+    total_rows = len(all_rows)
+    duplicates = total_rows - total
+    print(f"\n  Unique IPs: {total} (from {total_rows} total entries, {duplicates} duplicates removed)")
+    print(f"  Saved to: {UNIQUE_IPS_CSV_FILE}")
+    return total

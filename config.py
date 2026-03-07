@@ -36,6 +36,7 @@ CRAWL_TIME_SUMMARY_FILE = RESULTS_DIR / "crawl_time_summary.csv"
 CRAWL_TIME_CSV_HEADERS = [
     "Crawl Timestamp",
     "Platform",
+    "Parallel",
     "Total Offerings",
     "Pods Processed",
     "Pods Failed/Timed Out",
@@ -230,6 +231,10 @@ VAST_COMPARE_FIELDS = (
     "Prefix",
     "Erosion Case?",
 )
+
+# ── Unique IPs ────────────────────────────────────────────────────────────
+
+UNIQUE_IPS_CSV_FILE = RESULTS_DIR / "unique_scan_ips.csv"
 
 # ── Cross-Provider Overlap ────────────────────────────────────────────────
 

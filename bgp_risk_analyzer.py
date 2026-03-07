@@ -361,8 +361,9 @@ MENU = """
   [5] Prime Intellect GPU Pod Scan
   [6] Vast.ai GPU Machine Scan
   [7] Prime Intellect + Vast.ai (combined)
-  [8] Generate Visualizations
-  [9] Overlap Detection (PI vs Vast.ai)
+  [8] Refresh Unique IPs (from scan_results.csv)
+  [9] Generate Visualizations
+  [10] Overlap Detection (PI vs Vast.ai)
   [0] Exit
 """
 
@@ -427,15 +428,19 @@ def interactive_main():
             run_combined_interactive()
 
         elif choice == "8":
+            from csv_writer import refresh_unique_ips
+            refresh_unique_ips()
+
+        elif choice == "9":
             from visualization import run_visualizations
             run_visualizations()
 
-        elif choice == "9":
+        elif choice == "10":
             from overlap import run_overlap_check
             run_overlap_check()
 
         else:
-            print("  Invalid option. Please select 0-9.")
+            print("  Invalid option. Please select 0-10.")
 
 
 # -- Entry point --------------------------------------------------------------

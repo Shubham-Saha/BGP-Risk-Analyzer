@@ -192,7 +192,7 @@ def scan_all_pods(
 
     results = []
     result_queue = queue.Queue()
-    crawl_timer = CrawlTimer(total_offerings=len(offerings))
+    crawl_timer = CrawlTimer(total_offerings=len(offerings), parallelism=max_workers)
     crawl_timer.start_crawl()
 
     # Start background CSV writer thread

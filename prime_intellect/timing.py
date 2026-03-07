@@ -17,10 +17,11 @@ class CrawlTimer:
     Thread-safe: record_pod() can be called from any thread.
     """
 
-    def __init__(self, total_offerings: int, platform: str = "PI"):
+    def __init__(self, total_offerings: int, platform: str = "PI", parallelism: int = 1):
         self._lock = threading.Lock()
         self.total_offerings = total_offerings
         self.platform = platform
+        self.parallelism = parallelism
         self.pod_records: list[dict] = []
         self.crawl_start: float | None = None
         self.crawl_end: float | None = None
@@ -113,6 +114,7 @@ class CrawlTimer:
                 "%Y-%m-%d %H:%M:%S UTC"
             ),
             "Platform": self.platform,
+            "Parallel": self.parallelism,
             "Total Offerings": self.total_offerings,
             "Pods Processed": n,
             "Pods Failed/Timed Out": failed_count,
@@ -195,6 +197,7 @@ class CrawlTimer:
         """Print a readable summary to the console."""
         failed = summary['Pods Failed/Timed Out']
         print(f"\n  -- Crawl Time Summary ({summary['Platform']}) --")
+        print(f"    Parallel:                 {summary['Parallel']}")
         print(f"    Pods processed:           {summary['Pods Processed']}/{summary['Total Offerings']}")
         print(f"    Pods failed/timed out:    {failed}")
         if failed:
