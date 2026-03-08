@@ -124,4 +124,4 @@ All lookups use public APIs — no accounts needed except for Prime Intellect:
 
 ## License
 
-Research use. See the accompanying paper for citation.
+Research use.
