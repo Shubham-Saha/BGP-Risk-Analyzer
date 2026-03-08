@@ -236,6 +236,10 @@ VAST_COMPARE_FIELDS = (
 
 UNIQUE_IPS_CSV_FILE = RESULTS_DIR / "unique_scan_ips.csv"
 
+# ── Ping Status Tracking ─────────────────────────────────────────────────
+
+IP_PING_STATUS_FILE = RESULTS_DIR / "ip_ping_status.csv"
+
 # ── Cross-Provider Overlap ────────────────────────────────────────────────
 
 OVERLAP_CSV_FILE = RESULTS_DIR / "ip_overlap_results.csv"

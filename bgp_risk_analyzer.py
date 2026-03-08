@@ -315,27 +315,16 @@ def run_vast_interactive():
     display_vast_scan_summary(results)
 
 
-# -- Phase 7: Combined PI + Vast.ai ------------------------------------------
+# -- Phase 7: Ping Test (Unique IPs) -----------------------------------------
 
 
-def run_combined_interactive():
-    """Run Prime Intellect and Vast.ai scans sequentially, then overlap check."""
-    print("\n  Starting combined scan: Prime Intellect + Vast.ai")
-    print("  Each platform will prompt for selection independently.\n")
+def run_ping_test_interactive():
+    """Ping all unique IPs and track status over time."""
+    from ping_checker import run_ping_test
 
-    print("  === Starting Prime Intellect scan ===\n")
-    run_prime_interactive()
-
-    print("\n  === Starting Vast.ai scan ===\n")
-    run_vast_interactive()
-
-    # After both scans, run overlap detection
-    print("\n  Both scans complete. Running overlap detection...")
-    try:
-        from overlap import run_overlap_check
-        run_overlap_check()
-    except Exception as e:
-        print(f"  Warning: Overlap detection failed: {e}")
+    raw = input("\n  Parallel workers [default=200]: ").strip()
+    max_workers = int(raw) if raw.isdigit() and int(raw) > 0 else 200
+    run_ping_test(max_workers=max_workers)
 
 
 # -- Interactive menu ---------------------------------------------------------
@@ -360,10 +349,11 @@ MENU = """
   [4] Scan URLs from file
   [5] Prime Intellect GPU Pod Scan
   [6] Vast.ai GPU Machine Scan
-  [7] Prime Intellect + Vast.ai (combined)
+  [7] Ping Test (Unique IPs)
   [8] Refresh Unique IPs (from scan_results.csv)
   [9] Generate Visualizations
   [10] Overlap Detection (PI vs Vast.ai)
+  [11] Analysis
   [0] Exit
 """
 
@@ -425,7 +415,7 @@ def interactive_main():
             run_vast_interactive()
 
         elif choice == "7":
-            run_combined_interactive()
+            run_ping_test_interactive()
 
         elif choice == "8":
             from csv_writer import refresh_unique_ips
@@ -439,8 +429,12 @@ def interactive_main():
             from overlap import run_overlap_check
             run_overlap_check()
 
+        elif choice == "11":
+            from analysis import run_analysis_menu
+            run_analysis_menu()
+
         else:
-            print("  Invalid option. Please select 0-10.")
+            print("  Invalid option. Please select 0-11.")
 
 
 # -- Entry point --------------------------------------------------------------

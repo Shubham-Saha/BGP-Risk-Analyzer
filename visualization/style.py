@@ -12,26 +12,18 @@ CASE_COLORS = {
 }
 
 CASE_LABELS = {
-    1: "Case 1 — RPKI-enabled, MaxLen = Prefix (/24)",
-    2: "Case 2 — RPKI-enabled, MaxLen > Prefix",
-    3: "Case 3 — No ROA, Prefix = /24",
-    4: "Case 4 — No ROA, Prefix shorter than /24",
+    1: "Case 1 — ROA exists, MaxLen = prefix",
+    2: "Case 2 — ROA exists, MaxLen > prefix",
+    3: "Case 3 — No ROA, prefix = /24",
+    4: "Case 4 — No ROA, prefix > /24",
 }
 
-# Short labels for tight spaces (bar annotations, legends)
 CASE_LABELS_SHORT = {
-    1: "Case 1 (RPKI-enabled, /24)",
-    2: "Case 2 (RPKI-enabled, MaxLen gap)",
-    3: "Case 3 (No ROA, /24)",
-    4: "Case 4 (No ROA, shorter prefix)",
+    1: "Case 1",
+    2: "Case 2",
+    3: "Case 3",
+    4: "Case 4",
 }
-
-# Backwards compat aliases
-EROSION_COLORS = CASE_COLORS
-EROSION_LABELS = CASE_LABELS_SHORT
-
-ROA_COLORS = {"Valid": "#2ecc71", "Not Valid": "#e74c3c"}
-
 
 # ── Theme helper ─────────────────────────────────────────────────────────────
 
