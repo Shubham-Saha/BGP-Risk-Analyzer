@@ -1,4 +1,4 @@
-# GPURadar — BGP EROSION Risk Analyzer for GPU Cloud Infrastructure
+# BGP Risk Analyzer
 
 A research tool that discovers GPU cloud infrastructure IPs from decentralized AI providers and evaluates their vulnerability to [EROSION-style BGP attacks](https://ieeexplore.ieee.org/document/10646806). It performs automated RPKI/ROA validation, prefix analysis, and classifies each IP into one of four attack cases.
 
